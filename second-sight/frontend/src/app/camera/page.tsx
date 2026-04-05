@@ -19,7 +19,7 @@ export default function CameraPage() {
         setStatus("Requesting camera access...");
         localStream = await navigator.mediaDevices.getUserMedia({
           video: { width: 1280, height: 720 },
-          audio: false,
+          audio: true,
         });
 
         if (videoRef.current) {

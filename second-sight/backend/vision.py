@@ -2,34 +2,33 @@
 import cv2
 import numpy as np
 import asyncio
-import os
+import time
 
-os.makedirs("motion_clips", exist_ok=True)
+# Shared state read by webrtc.py to trigger the audio/video recorder
+motion_state = {"is_active": False}
 
 PROCESSING_WIDTH = 640
 PROCESSING_HEIGHT = 480
+MOTION_COOLDOWN_SECONDS = 5  # Keep recording for 5 seconds after motion stops
 
 async def process_video_track(track):
     print("Started OpenCV MOG2 video processing task...")
     
-    # Use OpenCV's built-in intelligent background subtractor
-    # history=500 frames, varThreshold=50 (higher = less sensitive)
     back_sub = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=50, detectShadows=False)
-    
-    motion_counter = 0
+    last_motion_time = 0
 
     try:
         while True:
+            # Receive the frame from WebRTC
             frame = await track.recv()
             img = frame.to_ndarray(format="bgr24")
             img = cv2.resize(img, (PROCESSING_WIDTH, PROCESSING_HEIGHT))
             
-            # Apply grayscale and blur to reduce camera noise
+            # Apply grayscale and blur to reduce noise
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             gray = cv2.GaussianBlur(gray, (21, 21), 0)
 
-            # Let MOG2 calculate the foreground mask automatically
-            # Learning rate is set to -1 so it auto-adapts continuously
+            # Apply background subtraction
             fg_mask = back_sub.apply(gray, learningRate=-1)
             
             # Clean up the mask
@@ -40,20 +39,23 @@ async def process_video_track(track):
             
             motion_detected = False
             for contour in contours:
-                # Ignore small movements (like shadows or noise)
-                if cv2.contourArea(contour) < 2000:
-                    continue
-                motion_detected = True
-                break
+                if cv2.contourArea(contour) > 2000:
+                    motion_detected = True
+                    break
+
+            current_time = time.time()
 
             if motion_detected:
-                motion_counter += 1
-                if motion_counter % 30 == 0: 
-                    print(f"🚨 Motion Detected! Capture event {motion_counter}")
-                    cv2.imwrite(f"motion_clips/motion_{motion_counter}.jpg", img)
+                last_motion_time = current_time
+                if not motion_state["is_active"]:
+                    print("🚨 Motion Detected! Triggering recording...")
+                    motion_state["is_active"] = True
             else:
-                # Reset counter quickly if motion stops
-                motion_counter = 0
+                # If no motion for X seconds, turn off the recording state
+                if motion_state["is_active"] and (current_time - last_motion_time > MOTION_COOLDOWN_SECONDS):
+                    print(f"✅ Motion stopped for {MOTION_COOLDOWN_SECONDS} seconds. Stopping recording...")
+                    motion_state["is_active"] = False
 
     except Exception as e:
         print(f"Video track processing stopped: {e}")
+        motion_state["is_active"] = False
