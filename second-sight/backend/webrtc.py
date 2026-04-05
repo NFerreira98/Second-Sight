@@ -14,7 +14,7 @@ pcs = set()
 
 active_tracks = {"video": None, "audio": None}
 recorder = None
-current_filename = None  # <--- Add this to track the filename
+current_filename = None 
 
 async def start_recording():
     global recorder, current_filename
@@ -22,34 +22,45 @@ async def start_recording():
         current_filename = f"motion_clips/event_{int(time.time())}.mp4"
         print(f"🎥 Starting new event recording: {current_filename}")
         
-        recorder = MediaRecorder(current_filename)
-        recorder.addTrack(relay.subscribe(active_tracks["audio"]))
-        recorder.addTrack(relay.subscribe(active_tracks["video"]))
+        try:
+            recorder = MediaRecorder(current_filename)
+            recorder.addTrack(relay.subscribe(active_tracks["audio"]))
+            recorder.addTrack(relay.subscribe(active_tracks["video"]))
+            await recorder.start()
+        except Exception as e:
+            print(f"Failed to start recorder: {e}")
+            recorder = None
         
-        await recorder.start()
         return current_filename
     return None
 
 async def stop_recording():
     global recorder, current_filename
     if recorder is not None:
-        print(f"⏹️ Motion ended. Saving {current_filename} to disk...")
-        await recorder.stop()
-        
         saved_file = current_filename
+        print(f"⏹️ Motion ended. Finalizing {saved_file} to disk...")
         
-        # Reset the globals for the next motion event
+        try:
+            # Tell aiortc to finish writing the .mp4 wrapper
+            await recorder.stop()
+        except ValueError:
+            # Known aiortc Mac bug if connection drops unexpectedly. Safe to ignore.
+            pass
+        except Exception as e:
+            print(f"Warning on record stop: {e}")
+            
         recorder = None
         current_filename = None
         
-        print("✅ Ready for AI Ingestion. Firing background task...")
-        # Fire and forget the AI ingestion so it doesn't block the live stream
+        print("✅ Event fully recorded. Triggering AI Ingestion...")
+        # Fire and forget the AI ingestion so it doesn't block the video stream
         asyncio.get_event_loop().run_in_executor(None, process_and_ingest_event, saved_file)
+
 async def recorder_watcher_loop():
     """Continuously checks the motion state from vision.py to start/stop recording."""
     is_recording = False
     while True:
-        await asyncio.sleep(0.5) # Check state twice a second
+        await asyncio.sleep(0.5) 
         
         if motion_state["is_active"] and not is_recording:
             await start_recording()
@@ -71,7 +82,8 @@ async def process_offer(offer_sdp: str, offer_type: str):
 
     @pc.on("track")
     def on_track(track):
-        print(f"Received {track.kind} track from frontend.")
+        global active_tracks
+        print(f"Received {track.kind}")
         
         if track.kind == "audio":
             active_tracks["audio"] = track
@@ -79,17 +91,18 @@ async def process_offer(offer_sdp: str, offer_type: str):
         elif track.kind == "video":
             active_tracks["video"] = track
             
-            # Send a copy of the video directly to OpenCV for analysis
+            # Send a copy of the video directly to OpenCV for motion analysis
             video_copy = relay.subscribe(track)
             asyncio.create_task(process_video_track(video_copy))
             
-            # Start the background loop that manages the .mp4 file saving
+            # Start the background loop that manages the .mp4 file saving based on motion
             asyncio.create_task(recorder_watcher_loop())
 
-    # WebRTC Handshake
+    # Accept the browser's offer
     offer = RTCSessionDescription(sdp=offer_sdp, type=offer_type)
     await pc.setRemoteDescription(offer)
 
+    # Create an answer to send back to the browser
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
 
