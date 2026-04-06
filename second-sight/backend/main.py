@@ -13,6 +13,7 @@ import certifi
 import time
 from dotenv import load_dotenv
 from datetime import datetime
+from vision import latest_frames
 
 # Import local modules
 from webrtc import process_offer
@@ -141,19 +142,38 @@ async def search_videos(query: SearchQuery):
 async def websocket_video_endpoint(websocket: WebSocket, camera_id: str):
     await websocket.accept()
     active_cameras[camera_id] = { "status": "connected", "connected_at": datetime.now().isoformat() }
-    
     try:
         data = await websocket.receive_text()
         offer_dict = json.loads(data)
-        # REMOVED camera_id argument from process_offer
-        answer_dict = await process_offer(offer_dict["sdp"], offer_dict["type"])
+        # PASS camera_id HERE
+        answer_dict = await process_offer(offer_dict["sdp"], offer_dict["type"], camera_id)
         await websocket.send_text(json.dumps(answer_dict))
         while True: 
             await websocket.receive_text()
     except WebSocketDisconnect:
-            print(f"📷 Camera {camera_id} legitimately disconnected.")
+        pass
     except Exception as e:
         print(f"🚨 CRASH IN WEBSOCKET: {repr(e)}")
     finally:
         if camera_id in active_cameras: 
             del active_cameras[camera_id]
+
+# --- NEW: Safe MJPEG Generator ---
+async def generate_mjpeg_stream(camera_id: str, request: Request):
+    """Yields JPEGs, but aggressively shuts down if browser disconnects."""
+    while True:
+        if await request.is_disconnected():
+            print(f"🛑 Dashboard disconnected from {camera_id}. Dropping stream cleanly.")
+            break
+            
+        if camera_id in latest_frames:
+            yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + latest_frames[camera_id] + b'\r\n')
+            
+        await asyncio.sleep(0.05) # Caps at 20 FPS to save CPU
+
+@app.get("/live/{camera_id}")
+async def get_live_stream(camera_id: str, request: Request):
+    return StreamingResponse(
+        generate_mjpeg_stream(camera_id, request), 
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )

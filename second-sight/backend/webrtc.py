@@ -70,7 +70,7 @@ async def recorder_watcher_loop():
             await stop_recording()
             is_recording = False
 
-async def process_offer(offer_sdp: str, offer_type: str):
+async def process_offer(offer_sdp: str, offer_type: str, camera_id: str):
     pc = RTCPeerConnection()
     pcs.add(pc)
 
@@ -90,12 +90,10 @@ async def process_offer(offer_sdp: str, offer_type: str):
             
         elif track.kind == "video":
             active_tracks["video"] = track
-            
-            # Send a copy of the video directly to OpenCV for motion analysis
             video_copy = relay.subscribe(track)
-            asyncio.create_task(process_video_track(video_copy))
             
-            # Start the background loop that manages the .mp4 file saving based on motion
+            # PASS camera_id HERE
+            asyncio.create_task(process_video_track(video_copy, camera_id))
             asyncio.create_task(recorder_watcher_loop())
 
     # Accept the browser's offer

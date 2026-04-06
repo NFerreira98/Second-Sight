@@ -5,14 +5,15 @@ import asyncio
 import time
 
 motion_state = {"is_active": False}
+latest_frames = {} # <--- NEW: Store frames for the dashboard
 
 PROCESSING_WIDTH = 640
 PROCESSING_HEIGHT = 480
 MOTION_COOLDOWN_SECONDS = 5
 
-# Removed camera_id argument
-async def process_video_track(track):
-    print("Started OpenCV processing...")
+# --- ADD camera_id argument back ---
+async def process_video_track(track, camera_id: str):
+    print(f"Started OpenCV processing for {camera_id}...")
     
     back_sub = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=50, detectShadows=False)
     last_motion_time = 0
@@ -23,7 +24,10 @@ async def process_video_track(track):
             img = frame.to_ndarray(format="bgr24")
             img = cv2.resize(img, (PROCESSING_WIDTH, PROCESSING_HEIGHT))
             
-            # (Removed the imencode and latest_frames logic)
+            # --- NEW: Save the frame as a JPEG for the Dashboard ---
+            _, buffer = cv2.imencode('.jpg', img)
+            latest_frames[camera_id] = buffer.tobytes()
+            # -------------------------------------------------------
 
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             gray = cv2.GaussianBlur(gray, (21, 21), 0)
@@ -34,12 +38,7 @@ async def process_video_track(track):
 
             contours, _ = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
-            motion_detected = False
-            for contour in contours:
-                if cv2.contourArea(contour) > 2000:
-                    motion_detected = True
-                    break
-
+            motion_detected = any(cv2.contourArea(c) > 2000 for c in contours)
             current_time = time.time()
 
             if motion_detected:
@@ -49,7 +48,7 @@ async def process_video_track(track):
                     motion_state["is_active"] = True
             else:
                 if motion_state["is_active"] and (current_time - last_motion_time > MOTION_COOLDOWN_SECONDS):
-                    print(f"✅ Motion stopped. Stopping recording...")
+                    print("✅ Motion stopped. Stopping recording...")
                     motion_state["is_active"] = False
 
     except Exception as e:

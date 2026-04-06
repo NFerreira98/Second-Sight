@@ -23,6 +23,10 @@ def generate_video_caption(video_path: str) -> str:
         time.sleep(2)
         video_file = client.files.get(name=video_file.name)
         
+    if video_file.state.name == "FAILED":
+        client.files.delete(name=video_file.name)
+        raise Exception("Google Gemini failed to process this video file (It may be too short or corrupted).")
+   
     prompt = """
     Analyze this video in detail and describe the main action or 
     event, the setting and environment, any notable movements or 
