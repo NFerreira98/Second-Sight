@@ -51,7 +51,14 @@ export default function CameraPage() {
       if (ws) ws.close();
 
       setStatus("Connecting to backend...");
-      pc = new RTCPeerConnection();
+            // Change pc initialization to include STUN servers for better connectivity across networks:
+      // pc = new RTCPeerConnection();
+      pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" }
+        ]
+      });
 
       localStream.getTracks().forEach((track) => {
         pc!.addTrack(track, localStream!);
@@ -61,7 +68,12 @@ export default function CameraPage() {
       const safeId = encodeURIComponent(cameraId.trim().replace(/\s+/g, "_"));
       
       // Connect using the custom dynamic ID
-      ws = new WebSocket(`ws://localhost:8000/ws/video/${safeId}`);
+      // Auto-detect secure/insecure websockets and the current domain
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = window.location.host;
+      
+      // Connect through the Next.js proxy
+      ws = new WebSocket(`${protocol}//${host}/api/ws/video/${safeId}`);
 
       ws.onopen = async () => {
         setStatus("Negotiating connection...");

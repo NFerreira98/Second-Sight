@@ -55,6 +55,48 @@ class SearchQuery(BaseModel):
     text: str
     limit: int = 5
 
+# Add this model near your SearchQuery class
+class SetupCredentials(BaseModel):
+    gemini_key: str
+    deeplake_key: str
+    deeplake_org: str
+
+@app.get("/system/status")
+def get_system_status():
+    """Checks if the user has configured their API keys yet."""
+    has_gemini = bool(os.getenv("GEMINI_API_KEY"))
+    has_deeplake = bool(os.getenv("DEEPLAKE_API_KEY"))
+    has_org = bool(os.getenv("DEEPLAKE_ORG_ID"))
+    
+    return {
+        "needs_setup": not (has_gemini and has_deeplake and has_org)
+    }
+
+@app.post("/system/setup")
+def save_system_setup(creds: SetupCredentials):
+    """Saves the user's API keys to the local .env file."""
+    env_content = f"""GEMINI_API_KEY="{creds.gemini_key.strip()}"
+DEEPLAKE_API_KEY="{creds.deeplake_key.strip()}"
+DEEPLAKE_ORG_ID="{creds.deeplake_org.strip()}"
+"""
+    # Write to the .env file in the backend folder
+    with open(".env", "w") as f:
+        f.write(env_content)
+        
+    # Update current running environment memory
+    os.environ["GEMINI_API_KEY"] = creds.gemini_key.strip()
+    os.environ["DEEPLAKE_API_KEY"] = creds.deeplake_key.strip()
+    os.environ["DEEPLAKE_ORG_ID"] = creds.deeplake_org.strip()
+    
+    # Re-initialize the global database client
+    global dl_client
+    try:
+        dl_client = Client()
+    except Exception as e:
+        return {"error": f"Failed to connect to DeepLake: {str(e)}"}
+        
+    return {"success": True}
+
 @app.on_event("startup")
 async def startup_event():
     global dl_client
@@ -125,7 +167,8 @@ async def search_videos(query: SearchQuery):
                     pass
             
             search_results.append({
-                "video_url": f"http://127.0.0.1:8000/{clean_filepath}",
+                # RETURN A RELATIVE PATH! The frontend proxy will route /api/ to the backend natively
+                "video_url": f"/api/{clean_filepath}", 
                 "caption": row['caption'],
                 "timestamp": formatted_time
             })

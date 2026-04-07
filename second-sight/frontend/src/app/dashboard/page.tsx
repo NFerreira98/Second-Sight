@@ -31,7 +31,7 @@ export default function DashboardPage() {
 
     async function fetchCameras() {
       try {
-        const res = await fetch("http://localhost:8000/active-cameras");
+        const res = await fetch("/api/active-cameras");
         if (res.ok && isMounted) {
           const data = await res.json();
           const sorted = data.cameras.sort((a: CameraNode, b: CameraNode) => a.id.localeCompare(b.id));
@@ -61,7 +61,7 @@ export default function DashboardPage() {
     setHasSearched(true); // Switch view to Search Results
 
     try {
-      const res = await fetch("http://localhost:8000/search", {
+      const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: query, limit }),
@@ -145,46 +145,42 @@ export default function DashboardPage() {
         {!hasSearched ? (
           
           /* --- 1. LIVE CAMERAS STATE --- */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {activeCameras.map((cam) => (
-            <div key={cam.id} className="relative aspect-video bg-gray-900 border border-gray-700 hover:border-blue-500/50 rounded-xl shadow-lg flex flex-col items-center justify-center text-gray-400 overflow-hidden group transition-all">
-              
-              {/* --- THE LIVE MJPEG STREAM --- */}
-              <img 
-                src={`http://localhost:8000/live/${cam.id}`}
-                alt={`Live feed from ${cam.id}`}
-                className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-                onError={(e) => {
-                  // Fallback icon if the video stream breaks or pauses
-                  e.currentTarget.style.display = 'none';
-                  e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                }}
-              />
-              
-              {/* Fallback Icon Container */}
-              <div className="hidden absolute inset-0 flex flex-col items-center justify-center bg-gray-900 z-0">
-                <Video className="w-12 h-12 mb-3 opacity-30 text-gray-500 animate-pulse" />
-                <p className="text-xs text-gray-500 uppercase tracking-widest">Feed Paused</p>
+          <div className="space-y-6 min-h-[400px]">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-800">
+              <div className="flex items-center gap-3 text-gray-300">
+                <span className="relative flex h-3 w-3">
+                  {activeCameras.length > 0 && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-3 w-3 ${activeCameras.length > 0 ? "bg-green-500" : "bg-red-500"}`}></span>
+                </span>
+                <h2 className="text-xl font-semibold">Active Camera Nodes ({activeCameras.length})</h2>
               </div>
-
-              {/* Camera Info Overlay */}
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-950 via-gray-900/80 to-transparent pt-12 pb-3 px-4 z-10 text-left">
-                <p className="text-lg font-bold text-white tracking-wide shadow-black drop-shadow-md">
-                  {cam.id.replace(/_/g, ' ')}
-                </p>
-                <p className="text-xs mt-0.5 text-gray-300 font-mono shadow-black drop-shadow-md">
-                  Online since: {new Date(cam.connected_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                </p>
-              </div>
-
-              {/* Blinking Live Indicator */}
-              <div className="absolute top-3 right-3 flex items-center justify-center p-1.5 bg-green-500/20 rounded-full z-10">
-                  <div className="w-2.5 h-2.5 bg-green-500 rounded-full shadow-[0_0_15px_rgba(34,197,94,1)] animate-pulse"></div>
-              </div>
-              
             </div>
-          ))}
-        </div>
+            
+            {activeCameras.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-gray-500 bg-gray-900/50 border border-gray-800 border-dashed rounded-2xl">
+                <Video className="w-12 h-12 mb-3 opacity-30" />
+                <p className="text-lg font-medium">No active cameras found on the network.</p>
+                <p className="text-sm mt-1">Open <code>/camera</code> in a new tab to start a node.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {activeCameras.map((cam) => (
+                  <div key={cam.id} className="relative aspect-video bg-gray-900 border border-gray-700 hover:border-blue-500/50 rounded-xl shadow-[0_0_15px_rgba(59,130,246,0.05)] flex flex-col items-center justify-center text-gray-400 overflow-hidden group transition-colors">
+                    <Video className="w-12 h-12 mb-3 opacity-60 text-blue-500 group-hover:scale-110 transition-transform duration-300" />
+                    <p className="text-lg font-bold text-gray-200">{cam.id.replace(/_/g, ' ')}</p>
+                    <p className="text-xs mt-1 opacity-70">
+                      Connected: {new Date(cam.connected_at).toLocaleTimeString()}
+                    </p>
+                    <div className="absolute top-3 right-3 flex items-center justify-center p-1.5 bg-green-500/20 rounded-full animate-pulse">
+                        <div className="w-2 h-2 bg-green-500 rounded-full shadow-[0_0_10px_rgba(34,197,94,1)]"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
         ) : (
 
