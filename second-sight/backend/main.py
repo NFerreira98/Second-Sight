@@ -14,6 +14,7 @@ import time
 from dotenv import load_dotenv
 from datetime import datetime
 from vision import latest_frames
+import glob
 
 # Import local modules
 from webrtc import process_offer
@@ -49,6 +50,11 @@ os.makedirs("motion_clips", exist_ok=True)
 app.mount("/motion_clips", StaticFiles(directory="motion_clips"), name="motion_clips")
 
 dl_client = None
+
+
+RETENTION_DAYS = 30  # Change this to however many days you want to keep videos
+LOCKED_FILES_DB = "motion_clips/locked_clips.json"
+
 
 # Pydantic model for the search request
 class SearchQuery(BaseModel):
@@ -97,6 +103,53 @@ DEEPLAKE_ORG_ID="{creds.deeplake_org.strip()}"
         
     return {"success": True}
 
+def get_locked_files():
+    if os.path.exists(LOCKED_FILES_DB):
+        with open(LOCKED_FILES_DB, "r") as f:
+            return json.load(f)
+    return []
+
+@app.post("/lock-video")
+async def lock_video(request: Request):
+    """Flags a video so it is never auto-deleted."""
+    data = await request.json()
+    filename = data.get("filename") # e.g., "motion_clips/event_123.mp4"
+    
+    locked = get_locked_files()
+    if filename not in locked:
+        locked.append(filename)
+        with open(LOCKED_FILES_DB, "w") as f:
+            json.dump(locked, f)
+            
+    return {"success": True, "locked": True}
+
+async def automated_retention_cleanup():
+    """Runs continuously in the background to delete old unlocked videos."""
+    while True:
+        try:
+            print("🧹 Running automated retention cleanup...")
+            now = time.time()
+            locked_files = set(get_locked_files())
+            
+            # Find all mp4 files in the folder
+            for video_file in glob.glob("motion_clips/*.mp4"):
+                # Skip if the user locked it!
+                if video_file in locked_files:
+                    continue
+                    
+                # Check how old the file is
+                file_age_days = (now - os.path.getmtime(video_file)) / (60 * 60 * 24)
+                
+                if file_age_days > RETENTION_DAYS:
+                    os.remove(video_file)
+                    print(f"🗑️ Deleted old video to save space: {video_file}")
+                    
+        except Exception as e:
+            print(f"Cleanup error: {e}")
+            
+        # Wait 24 hours before checking again
+        await asyncio.sleep(86400) 
+
 @app.on_event("startup")
 async def startup_event():
     global dl_client
@@ -106,6 +159,9 @@ async def startup_event():
         print("Successfully connected to DeepLake!")
     except Exception as e:
         print(f"Failed to connect to DeepLake Workspace. Error: {e}")
+    
+    # Start the automated retention cleanup loop
+    asyncio.create_task(automated_retention_cleanup())
 
 @app.get("/")
 def read_root():

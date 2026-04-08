@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Video, VideoOff } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 export default function CameraPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -14,8 +15,21 @@ export default function CameraPage() {
   const [isPaused, setIsPaused] = useState(false);
   const [status, setStatus] = useState("Waiting to start...");
 
+  const router = useRouter();
+
   useEffect(() => {
-    // Don't run the connection logic until the user enters a name and clicks Start
+    // --- NEW: Setup Check ---
+    async function checkSetup() {
+      try {
+        const res = await fetch("/api/system/status");
+        if (res.ok && (await res.json()).needs_setup) {
+          router.push("/setup");
+        }
+      } catch (e) {}
+    }
+
+    checkSetup();
+    
     if (!isStarted || !cameraId) return;
 
     let pc: RTCPeerConnection | null = null;

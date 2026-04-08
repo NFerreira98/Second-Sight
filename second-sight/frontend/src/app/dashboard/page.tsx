@@ -2,7 +2,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Search, Loader2, PlaySquare, X, Video } from "lucide-react";
+import { Search, Loader2, PlaySquare, X, Video, Download, Lock } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface SearchResult {
   video_url: string;
@@ -22,12 +23,32 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasSearched, setHasSearched] = useState(false); 
-  
   const [activeCameras, setActiveCameras] = useState<CameraNode[]>([]);
+
+  const router = useRouter();
 
   // Fetch Active Cameras List every 3 seconds
   useEffect(() => {
     let isMounted = true;
+
+        // --- NEW: Fail-Safe Setup Check ---
+        async function checkSetup() {
+          try {
+            const res = await fetch("/api/system/status");
+            if (res.ok) {
+              const data = await res.json();
+              if (data.needs_setup) {
+                router.push("/setup");
+              }
+            } else {
+              console.warn("System Status check returned:", res.status);
+            }
+          } catch (err) {
+            console.error("Setup check completely failed (Network Error):", err);
+          }
+        }
+    
+    checkSetup();
 
     async function fetchCameras() {
       try {
@@ -85,6 +106,20 @@ export default function DashboardPage() {
     setResults([]);
     setHasSearched(false); // Switch view back to Live Cameras
     setError("");
+  };
+
+  const handleLockVideo = async (filename: string) => {
+    try {
+      await fetch("/api/lock-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // The backend expects the raw filename, which is everything after /api/
+        body: JSON.stringify({ filename: filename.replace("/api/", "") }), 
+      });
+      alert("Video locked! It will not be auto-deleted.");
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   return (
@@ -166,19 +201,45 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {activeCameras.map((cam) => (
-                  <div key={cam.id} className="relative aspect-video bg-gray-900 border border-gray-700 hover:border-blue-500/50 rounded-xl shadow-[0_0_15px_rgba(59,130,246,0.05)] flex flex-col items-center justify-center text-gray-400 overflow-hidden group transition-colors">
-                    <Video className="w-12 h-12 mb-3 opacity-60 text-blue-500 group-hover:scale-110 transition-transform duration-300" />
-                    <p className="text-lg font-bold text-gray-200">{cam.id.replace(/_/g, ' ')}</p>
-                    <p className="text-xs mt-1 opacity-70">
-                      Connected: {new Date(cam.connected_at).toLocaleTimeString()}
-                    </p>
-                    <div className="absolute top-3 right-3 flex items-center justify-center p-1.5 bg-green-500/20 rounded-full animate-pulse">
-                        <div className="w-2 h-2 bg-green-500 rounded-full shadow-[0_0_10px_rgba(34,197,94,1)]"></div>
-                    </div>
+              {activeCameras.map((cam) => (
+                <div key={cam.id} className="relative aspect-video bg-gray-900 border border-gray-700 hover:border-blue-500/50 rounded-xl shadow-lg flex flex-col items-center justify-center text-gray-400 overflow-hidden group transition-all">
+                  
+                  {/* --- THE LIVE MJPEG STREAM (Uses /api/ proxy so it works on phones) --- */}
+                  <img 
+                    src={`/api/live/${cam.id}`}
+                    alt={`Live feed from ${cam.id}`}
+                    className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                    onError={(e) => {
+                      // Fallback icon if the video stream breaks or pauses
+                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                    }}
+                  />
+                  
+                  {/* Fallback Icon Container */}
+                  <div className="hidden absolute inset-0 flex flex-col items-center justify-center bg-gray-900 z-0">
+                    <Video className="w-12 h-12 mb-3 opacity-30 text-gray-500 animate-pulse" />
+                    <p className="text-xs text-gray-500 uppercase tracking-widest">Feed Paused</p>
                   </div>
-                ))}
-              </div>
+
+                  {/* Camera Info Overlay */}
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-950 via-gray-900/80 to-transparent pt-12 pb-3 px-4 z-10 text-left">
+                    <p className="text-lg font-bold text-white tracking-wide shadow-black drop-shadow-md">
+                      {cam.id.replace(/_/g, ' ')}
+                    </p>
+                    <p className="text-xs mt-0.5 text-gray-300 font-mono shadow-black drop-shadow-md">
+                      Online since: {new Date(cam.connected_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    </p>
+                  </div>
+
+                  {/* Blinking Live Indicator */}
+                  <div className="absolute top-3 right-3 flex items-center justify-center p-1.5 bg-green-500/20 rounded-full z-10">
+                      <div className="w-2.5 h-2.5 bg-green-500 rounded-full shadow-[0_0_15px_rgba(34,197,94,1)] animate-pulse"></div>
+                  </div>
+                  
+                </div>
+              ))}
+            </div>
             )}
           </div>
 
@@ -212,6 +273,27 @@ export default function DashboardPage() {
                         {result.timestamp}
                       </p>
                     )}
+
+                      {/* --- SAVE PERMANENTLY (LOCK) BUTTON --- */}
+                      <button 
+                        onClick={() => handleLockVideo(result.video_url)}
+                        className="text-gray-400 hover:text-red-400 transition-colors ml-3"
+                        title="Lock (Prevent Auto-Delete)"
+                      >
+                        <Lock className="w-4 h-4" />
+                      </button>
+
+
+                      {/* --- DOWNLOAD BUTTON --- */}
+                      <a 
+                        href={result.video_url} 
+                        download={`SecondSight_Event_${result.timestamp?.replace(/[^a-zA-Z0-9]/g, '_') || 'clip'}.mp4`}
+                        className="text-gray-400 hover:text-white transition-colors"
+                        title="Download Clip"
+                      >
+                        <Download className="w-4 h-4" />
+                      </a>
+
                     <div className="flex items-start gap-2">
                       <PlaySquare className="w-5 h-5 text-gray-500 shrink-0 mt-0.5" />
                       <p className="text-gray-300 text-sm leading-relaxed" title={result.caption}>

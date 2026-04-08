@@ -1,0 +1,25 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: second-sight-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Creates a folder on the host machine to save clips so they aren't lost on restart
+      - ./motion_clips_data:/app/motion_clips
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: second-sight-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # Tells Next.js to route /api traffic to the backend container
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
