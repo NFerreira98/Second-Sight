@@ -1,0 +1,6 @@
+# backend/.dockerignore
+.venv/
+venv/
+__pycache__/
+motion_clips/
+.env

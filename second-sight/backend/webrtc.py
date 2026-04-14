@@ -2,6 +2,7 @@
 import asyncio
 import os
 import time
+from datetime import datetime
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaRelay, MediaRecorder
 from event_processor import process_and_ingest_event
@@ -19,7 +20,9 @@ current_filename = None
 async def start_recording():
     global recorder, current_filename
     if active_tracks["video"] and active_tracks["audio"] and recorder is None:
-        current_filename = f"motion_clips/event_{int(time.time())}.mp4"
+        timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        current_filename = f"motion_clips/event_{timestamp_str}.mkv"
+        
         print(f"🎥 Starting new event recording: {current_filename}")
         
         try:

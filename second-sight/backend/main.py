@@ -132,7 +132,7 @@ async def automated_retention_cleanup():
             locked_files = set(get_locked_files())
             
             # Find all mp4 files in the folder
-            for video_file in glob.glob("motion_clips/*.mp4"):
+            for video_file in glob.glob("motion_clips/*.*"):
                 # Skip if the user locked it!
                 if video_file in locked_files:
                     continue

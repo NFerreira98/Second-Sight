@@ -31,7 +31,7 @@ export default function DashboardPage() {
   useEffect(() => {
     let isMounted = true;
 
-        // --- NEW: Fail-Safe Setup Check ---
+        // --- Fail-Safe Setup Check ---
         async function checkSetup() {
           try {
             const res = await fetch("/api/system/status");
