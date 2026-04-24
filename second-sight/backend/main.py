@@ -56,6 +56,10 @@ RETENTION_DAYS = 30  # Change this to however many days you want to keep videos
 LOCKED_FILES_DB = "motion_clips/locked_clips.json"
 
 
+
+# Configurable relevance threshold (set via environment variable or fallback to default)
+RELEVANCE_THRESHOLD = float(os.getenv("RELEVANCE_THRESHOLD", 0.3))
+
 # Pydantic model for the search request
 class SearchQuery(BaseModel):
     text: str
@@ -204,32 +208,35 @@ async def search_videos(query: SearchQuery):
                 "timestamp": str(event_timestamp) if event_timestamp else "Unknown Time"
             })
 
-        results_with_scores.sort(key=lambda x: x["score"], reverse=True)
-        top_results = results_with_scores[:query.limit]
-        
+
+        # Filter by a minimum relevance threshold (configurable)
+        filtered_results = [r for r in results_with_scores if r["score"] >= RELEVANCE_THRESHOLD]
+        filtered_results.sort(key=lambda x: x["score"], reverse=True)
+        top_results = filtered_results[:query.limit]
+
         search_results = []
         for row in top_results:
             clean_filepath = row['filename'].strip("[]'\"")
-            
+
             # Format the time nicely for the user interface
             formatted_time = row['timestamp']
             if formatted_time != "Unknown Time":
-                try: 
+                try:
                     # Attempt to convert '2024-03-15T14:30:00+00:00' -> 'Mar 15, 2:30 PM'
                     dt = datetime.fromisoformat(formatted_time.replace('Z', '+00:00'))
                     formatted_time = dt.strftime("%b %d, %I:%M %p")
                 except Exception as e:
                     print(f"Error parsing date {formatted_time}: {e}")
                     pass
-            
+
             search_results.append({
                 # RETURN A RELATIVE PATH! The frontend proxy will route /api/ to the backend natively
-                "video_url": f"/api/{clean_filepath}", 
+                "video_url": f"/api/{clean_filepath}",
                 "caption": row['caption'],
                 "timestamp": formatted_time
             })
-            
-        print(f"✅ Returning top {len(search_results)} matches.")
+
+        print(f"✅ Returning top {len(search_results)} matches (filtered by threshold {RELEVANCE_THRESHOLD}).")
         return {"results": search_results}
 
     except Exception as e:

@@ -3,10 +3,32 @@ import asyncio
 import os
 import time
 from datetime import datetime
-from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
 from aiortc.contrib.media import MediaRelay, MediaRecorder
+from av import VideoFrame
 from event_processor import process_and_ingest_event
 from vision import process_video_track, motion_state
+
+class CleanVideoTrack(VideoStreamTrack):
+    def __init__(self, track):
+        super().__init__()
+        self.track = track
+
+    async def recv(self):
+        frame = await self.track.recv()
+        # Ensure dimensions match macroblocks (multiples of 16) to prevent green lines
+        w, h = frame.width, frame.height
+        new_w = w - (w % 16)
+        new_h = h - (h % 16)
+
+        if new_w != w or new_h != h:
+            img = frame.to_ndarray(format="bgr24")
+            img = img[:new_h, :new_w]
+            new_frame = VideoFrame.from_ndarray(img, format="bgr24")
+            new_frame.pts = frame.pts
+            new_frame.time_base = frame.time_base
+            return new_frame
+        return frame
 
 os.makedirs("motion_clips", exist_ok=True)
 
@@ -28,7 +50,12 @@ async def start_recording():
         try:
             recorder = MediaRecorder(current_filename)
             recorder.addTrack(relay.subscribe(active_tracks["audio"]))
-            recorder.addTrack(relay.subscribe(active_tracks["video"]))
+            
+            # Wrap the video track to prevent green lines before recording
+            raw_video = relay.subscribe(active_tracks["video"])
+            clean_video = CleanVideoTrack(raw_video)
+            recorder.addTrack(clean_video)
+            
             await recorder.start()
         except Exception as e:
             print(f"Failed to start recorder: {e}")

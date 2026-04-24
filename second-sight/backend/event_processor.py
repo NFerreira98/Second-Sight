@@ -1,5 +1,6 @@
 # backend/event_processor.py
 import os
+import time
 from datetime import datetime, timezone
 from deeplake import Client
 from gemini_client import generate_video_caption, generate_text_embedding
@@ -10,7 +11,7 @@ def process_and_ingest_event(video_path: str):
     """
     try:
         print(f"--- Starting AI Pipeline for {video_path} ---")
-        
+        time.sleep(1.5) 
         # 1. Grab current time in standard ISO format
         event_time = datetime.now(timezone.utc).isoformat()
         
